@@ -130,14 +130,26 @@ class CalculatingCaptchaService
     protected function createImage(string $content, bool $addHash = true): string
     {
         $imageResource = imagecreatefrompng($this->getBackgroundImage());
+        $textSize = (float)$this->configuration['textSize'];
+        $angle = $this->getFontAngleForCaptcha();
+        $fontPathAndFilename = $this->getFontPathAndFilename();
+
+        [$horizontalPosition, $verticalPosition] = $this->getTextPositionForCaptcha(
+            $imageResource,
+            $textSize,
+            $angle,
+            $fontPathAndFilename,
+            $content
+        );
+
         imagettftext(
             $imageResource,
-            (float)$this->configuration['textSize'],
-            $this->getFontAngleForCaptcha(),
-            $this->getHorizontalDistanceForCaptcha(),
-            $this->getVerticalDistanceForCaptcha(),
+            $textSize,
+            $angle,
+            $horizontalPosition,
+            $verticalPosition,
             $this->getColorForCaptcha($imageResource),
-            $this->getFontPathAndFilename(),
+            $fontPathAndFilename,
             $content
         );
         if (imagepng($imageResource, $this->getPathAndFilename(true)) === false) {
@@ -188,6 +200,53 @@ class CalculatingCaptchaService
     {
         $distances = GeneralUtility::trimExplode(',', $this->configuration['distanceVer'], true);
         return mt_rand((int)$distances[0], (int)$distances[1]);
+    }
+
+    /**
+     * Calculate a text position (horizontal and vertical) that keeps the rendered captcha
+     * string fully within the bounds of the background image, using the configured random
+     * distances as a starting point and clamping them against the actual glyph bounding box.
+     *
+     * @param resource $imageResource
+     * @return array{0: int, 1: int} [horizontal position, vertical position]
+     */
+    protected function getTextPositionForCaptcha(
+        $imageResource,
+        float $textSize,
+        int $angle,
+        string $fontPathAndFilename,
+        string $content
+    ): array {
+        $boundingBox = imagettfbbox($textSize, $angle, $fontPathAndFilename, $content);
+        $minX = min($boundingBox[0], $boundingBox[2], $boundingBox[4], $boundingBox[6]);
+        $maxX = max($boundingBox[0], $boundingBox[2], $boundingBox[4], $boundingBox[6]);
+        $minY = min($boundingBox[1], $boundingBox[3], $boundingBox[5], $boundingBox[7]);
+        $maxY = max($boundingBox[1], $boundingBox[3], $boundingBox[5], $boundingBox[7]);
+
+        $imageWidth = imagesx($imageResource);
+        $imageHeight = imagesy($imageResource);
+
+        $horizontalPosition = $this->clampPositionForCaptcha(
+            $this->getHorizontalDistanceForCaptcha(),
+            (int)ceil(0 - $minX),
+            (int)floor($imageWidth - $maxX)
+        );
+        $verticalPosition = $this->clampPositionForCaptcha(
+            $this->getVerticalDistanceForCaptcha(),
+            (int)ceil(0 - $minY),
+            (int)floor($imageHeight - $maxY)
+        );
+
+        return [$horizontalPosition, $verticalPosition];
+    }
+
+    /**
+     * Clamp a random position into the given bounds. If the bounds are inverted (e.g. the
+     * rendered text is wider/taller than the background image), this resolves to $min.
+     */
+    protected function clampPositionForCaptcha(int $position, int $min, int $max): int
+    {
+        return max($min, min($max, $position));
     }
 
     /**
