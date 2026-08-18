@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace In2code\Powermail\Domain\Service;
 
+use GdImage;
 use In2code\Powermail\Domain\Model\Field;
 use In2code\Powermail\Exception\FileCannotBeCreatedException;
 use In2code\Powermail\Exception\FileNotFoundException;
@@ -130,6 +131,12 @@ class CalculatingCaptchaService
     protected function createImage(string $content, bool $addHash = true): string
     {
         $imageResource = imagecreatefrompng($this->getBackgroundImage());
+        if ($imageResource === false) {
+            throw new FileCannotBeCreatedException(
+                'Captcha background image could not be loaded from ' . $this->getBackgroundImage(),
+                1755500001
+            );
+        }
         $textSize = (float)$this->configuration['textSize'];
         $angle = $this->getFontAngleForCaptcha();
         $fontPathAndFilename = $this->getFontPathAndFilename();
@@ -166,10 +173,9 @@ class CalculatingCaptchaService
     /**
      * Get color from configuration
      *
-     * @param resource $imageResource
      * @return int color identifier
      */
-    protected function getColorForCaptcha($imageResource): int
+    protected function getColorForCaptcha(GdImage $imageResource): int
     {
         $colorRgb = sscanf($this->configuration['textColor'], '#%2x%2x%2x');
         return imagecolorallocate($imageResource, $colorRgb[0], $colorRgb[1], $colorRgb[2]);
@@ -207,17 +213,23 @@ class CalculatingCaptchaService
      * string fully within the bounds of the background image, using the configured random
      * distances as a starting point and clamping them against the actual glyph bounding box.
      *
-     * @param resource $imageResource
      * @return array{0: int, 1: int} [horizontal position, vertical position]
+     * @throws FileCannotBeCreatedException
      */
     protected function getTextPositionForCaptcha(
-        $imageResource,
+        GdImage $imageResource,
         float $textSize,
         int $angle,
         string $fontPathAndFilename,
         string $content
     ): array {
         $boundingBox = imagettfbbox($textSize, $angle, $fontPathAndFilename, $content);
+        if ($boundingBox === false) {
+            throw new FileCannotBeCreatedException(
+                'Captcha text bounding box could not be calculated - please check the configured font',
+                1755500002
+            );
+        }
         $minX = min($boundingBox[0], $boundingBox[2], $boundingBox[4], $boundingBox[6]);
         $maxX = max($boundingBox[0], $boundingBox[2], $boundingBox[4], $boundingBox[6]);
         $minY = min($boundingBox[1], $boundingBox[3], $boundingBox[5], $boundingBox[7]);
